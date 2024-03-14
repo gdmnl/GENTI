@@ -445,6 +445,9 @@ class GENTI(torch.nn.Module):
         # final projection layer
         self.affinity_score = MergeLayer(self.out_dim, self.out_dim, self.out_dim, 1, non_linear=not self.walk_linear_out)
 
+        # final projection layer for single node
+        self.score_single = torch.nn.Linear(self.out_dim, 1)
+
         self.get_checkpoint_path = get_checkpoint_path
 
         self.flag_for_cur_edge = True  # flagging whether the current edge under computation is real edges, for data analysis
@@ -524,6 +527,32 @@ class GENTI(torch.nn.Module):
         neg_score1 = self.forward(src_idx_l, bgd_idx_l, cut_time_l, (subgraph_src, subgraph_bgd), test=test)
 
         return pos_score.sigmoid(), neg_score1.sigmoid()
+
+    def single(self, src_idx_l, cut_time_l, e_idx_l=None, test=False):
+        '''
+        1. grab subgraph for src, tgt, bgd
+        2. add positional encoding for src & tgt nodes
+        3. forward propagate to get src embeddings and tgt embeddings (and finally pos_score (shape: [batch, ]))
+        4. forward propagate to get src embeddings and bgd embeddings (and finally neg_score (shape: [batch, ]))
+        '''
+        device = self.n_feat_th.device
+        cut_time_l = torch.from_numpy(cut_time_l).float().to(device)
+        src_idx_l = torch.from_numpy(src_idx_l).long().to(device)
+        if e_idx_l is not None:
+            e_idx_l = torch.from_numpy(e_idx_l).long().to(device)
+
+        # update graph
+        ts_max = max(cut_time_l)
+        self.ngh_finder.update_async(ts_max)
+
+        self.ngh_finder.event.wait()
+        subgraph_src = self.grab_subgraph(src_idx_l, cut_time_l, e_idx_l=e_idx_l)
+
+        position_features = self.retrieve_position_feature(subgraph_src[0], subgraph_src[0])
+        node_embed = self.forward_msg(src_idx_l, cut_time_l, subgraph_src, position_features[0], test=test)
+        score = torch.nn.Sigmoid()(self.score_single(node_embed))
+
+        return score
 
     def forward(self, src_idx_l, tgt_idx_l, cut_time_l, subgraphs=None, test=False):
         subgraph_src, subgraph_tgt = subgraphs

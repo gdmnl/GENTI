@@ -24,6 +24,11 @@ def feeder(p, graph, event):
                     reqs.append(graph.edges[k][0])
                     updates.append(graph.edges[k])
                     k += 1
+                
+                if len(reqs) == 0:
+                    event.set()
+                    continue
+
                 graph.eidx = k
                 graph.insert(updates)
 

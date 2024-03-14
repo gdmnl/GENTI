@@ -44,7 +44,7 @@ We also recommend discretizing the timestamps (`ts`) into integers for better in
 
 #### Examples:
 
-* The command to train **GENTI** on 6 dataset:
+* The command to train **GENTI** on 6 link predction dataset:
 
 ```bash
 # Training on Wikipedia
@@ -59,6 +59,19 @@ python main.py -d superuser --pos_dim 128 --bs 128 --n_walks 32 --n_steps 2 --w 
 python main.py -d wikitalk --pos_dim 128 --bs 128 --n_walks 32 --n_steps 2 --w 32 --bias 1e-7 --walk_pool sum --seed 123 --gpu 0 
 # Training on MAG
 python main.py -d mag --pos_dim 128 --bs 256 --n_walks 32 --n_steps 2 --w 32 --bias 1 --walk_pool sum --seed 123 --gpu 0
+# Training on GDELT
+python main.py -d gdelt --pos_dim 133 --bs 128 --n_walks 32 --n_steps 2 --w 64 --bias 1e-4 --walk_pool sum --seed 123 --gpu 0
+# Training on TGBL-Comment
+python main.py -d comment --pos_dim 128 --bs 128 --n_walks 32 --n_steps 2 --w 64 --bias 1e-7 --walk_pool sum --seed 123 --gpu 0
+```
+
+
+* The command to train **GENTI** on 2 node classification dataset:
+
+```bash
+# Training on Wikipedia
+python node_classification.py -d wikipedia --pos_dim 108 --bs 64 --n_walks 64 --n_steps 2 --w 64 --bias 1e-5 --walk_pool sum --seed 0 --gpu 0
+python node_classification.py -d reddit --pos_dim 108 --bs 64 --n_walks 64 --n_steps 2 --w 64 --bias 1e-5 --walk_pool sum --seed 0 --gpu 0
 ```
 
 Detailed logs can be found in `log/`.
