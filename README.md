@@ -1,5 +1,7 @@
 # GENTI
 
+This is the original code for "GENTI: GPU-powered Walk-based Subgraph Extraction for Scalable Representation Learning on Dynamic Graphs" (VLDB 2024).
+
 ## Environment
 Prepare the environment. We use Anaconda to manage packages. The following command create the conda environment to be used:
 ```{bash}
@@ -20,6 +22,8 @@ unzip data.zip
 - SuperUser: downloadable from http://snap.stanford.edu/data/sx-superuser.html.
 
 - Wiki-Talk: downloadable from http://snap.stanford.edu/data/wiki-talk-temporal.html.
+
+- Tgbl-Comment: https://tgb.complexdatalab.com/
 
 - MAG: https://github.com/amazon-science/tgl.
 
@@ -44,7 +48,7 @@ We also recommend discretizing the timestamps (`ts`) into integers for better in
 
 #### Examples:
 
-* The command to train **GENTI** on 6 link predction dataset:
+* The command to train **GENTI** on link predction datasets:
 
 ```bash
 # Training on Wikipedia
@@ -59,14 +63,12 @@ python main.py -d superuser --pos_dim 128 --bs 128 --n_walks 32 --n_steps 2 --w 
 python main.py -d wikitalk --pos_dim 128 --bs 128 --n_walks 32 --n_steps 2 --w 32 --bias 1e-7 --walk_pool sum --seed 123 --gpu 0 
 # Training on MAG
 python main.py -d mag --pos_dim 128 --bs 256 --n_walks 32 --n_steps 2 --w 32 --bias 1 --walk_pool sum --seed 123 --gpu 0
-# Training on GDELT
-python main.py -d gdelt --pos_dim 133 --bs 128 --n_walks 32 --n_steps 2 --w 64 --bias 1e-4 --walk_pool sum --seed 123 --gpu 0
-# Training on TGBL-Comment
+# Training on Tgbl-Comment
 python main.py -d comment --pos_dim 128 --bs 128 --n_walks 32 --n_steps 2 --w 64 --bias 1e-7 --walk_pool sum --seed 123 --gpu 0
 ```
 
 
-* The command to train **GENTI** on 2 node classification dataset:
+* The command to train **GENTI** on node classification datasets:
 
 ```bash
 # Training on Wikipedia
@@ -127,4 +129,20 @@ usage: Interface for Inductive Dynamic Representation Learning for Link Predicti
   --gpu GPU             which gpu to use
   --verbosity VERBOSITY
                         verbosity of the program output
+```
+
+## Acknowledgement
+
+We adapt the code provided in the repository [CAW](https://github.com/snap-stanford/CAW) and [TGAT](https://github.com/StatsDLMathsRecomSys/Inductive-representation-learning-on-temporal-graphs) as the foundation for our implementation. We appreciate the authors for sharing the code.
+
+## Cite
+
+```
+@inproceedings{yu2024genti,
+  title={GENTI: GPU-powered Walk-based Subgraph Extraction for Scalable Representation Learning on Dynamic Graphs},
+  author={Yu, Zihao and Liao, Ningyi and Luo, Siqiang},
+  booktitle={Proceedings of the VLDB Endowment},
+  volume={17},
+  year={2024},
+}
 ```

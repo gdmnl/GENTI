@@ -518,7 +518,7 @@ class GENTI(torch.nn.Module):
         subgraph_bgd = self.grab_subgraph(bgd_idx_l, cut_time_l, e_idx_l=None)
 
         # update graph
-        ts_max = max(cut_time_l)
+        ts_max = max(cut_time_l).item()
         self.ngh_finder.update_async(ts_max)
 
         self.flag_for_cur_edge = True

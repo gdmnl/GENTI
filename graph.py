@@ -24,7 +24,7 @@ def feeder(p, graph, event):
                     reqs.append(graph.edges[k][0])
                     updates.append(graph.edges[k])
                     k += 1
-                
+
                 if len(reqs) == 0:
                     event.set()
                     continue
@@ -32,8 +32,6 @@ def feeder(p, graph, event):
                 graph.eidx = k
                 graph.insert(updates)
 
-                torch.cuda.synchronize()
-                p = time.time()
                 samples_nodes = []
                 samples_eidx = []
                 samples_ts = []
@@ -135,7 +133,7 @@ class Graph:
 
         b_nodes = torch.tensor([r[0] for r in ret]).long()
         b_idx = torch.tensor([r[1] for r in ret]).long()
-        b_ts =torch.tensor([r[2] for r in ret]).float()
+        b_ts = torch.tensor([r[2] for r in ret]).float()
         return b_nodes, b_idx, b_ts
 
     def reset(self):
