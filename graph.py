@@ -13,43 +13,59 @@ def feeder(p, graph, event):
     left.close()
     while True:
         try:
-            op, pool, cur_ts = right.recv()        
+            op, pool, update_list, head, cur_ts = right.recv()
             if op == 'reset':
                 graph.reset()
             elif op == 'update':
+                L_neighbors, L_eidx, L_ts = pool
+                device = L_neighbors.device
+                W = L_neighbors.shape[1]
+
+                # Build set of all nodes to update (deduplication)
+                update_nodes = set()
+                for node_id, cnt in update_list:
+                    if node_id != 0 and cnt >= W:
+                        update_nodes.add(int(node_id))
+
+                # Add all nodes from edge-triggered update
                 updates = []
-                reqs = []
                 k = graph.eidx
                 while k < graph.m and graph.edges[k][3] <= cur_ts:
-                    reqs.append(graph.edges[k][0])
+                    n = int(graph.edges[k][0])
+                    if n != 0:
+                        update_nodes.add(n)
                     updates.append(graph.edges[k])
                     k += 1
+                graph.eidx = k
+                if len(updates) > 0:
+                    graph.insert(updates)
 
-                if len(reqs) == 0:
+                if not update_nodes:
                     event.set()
                     continue
 
-                graph.eidx = k
-                graph.insert(updates)
+                rows = []
+                samples_n, samples_e, samples_t = [], [], []
+                for node_id in sorted(update_nodes):
+                    sample_nodes, sample_eidx, sample_ts = graph.sample(node_id, W)
+                    if len(sample_nodes) > 0:
+                        rows.append(node_id)
+                        samples_n.append(sample_nodes)
+                        samples_e.append(sample_eidx)
+                        samples_t.append(sample_ts)
 
-                samples_nodes = []
-                samples_eidx = []
-                samples_ts = []
-                reqs = np.unique(reqs)
-                for req in reqs:
-                    sample = graph.sample(req, graph.W)
-                    samples_nodes.append(sample[0])
-                    samples_eidx.append(sample[1])
-                    samples_ts.append(sample[2])
-                device = pool[0].device
-                pool[0][reqs, :] = torch.stack(samples_nodes, dim=0).to(device, non_blocking=True)
-                pool[1][reqs, :] = torch.stack(samples_eidx, dim=0).to(device, non_blocking=True)
-                pool[2][reqs, :] = torch.stack(samples_ts, dim=0).to(device, non_blocking=True)
+                if rows:
+                    rows_tensor = torch.tensor(rows, dtype=torch.long, device=device)
+                    arr_n = torch.from_numpy(np.stack(samples_n)).to(device, non_blocking=True)
+                    arr_e = torch.from_numpy(np.stack(samples_e)).to(device, non_blocking=True)
+                    arr_t = torch.from_numpy(np.stack(samples_t)).to(device, non_blocking=True)
+                    L_neighbors[rows_tensor, :] = arr_n
+                    L_eidx[rows_tensor, :]      = arr_e
+                    L_ts[rows_tensor, :]        = arr_t
 
                 event.set()
             else:
                 raise NotImplementedError('invalid operator')
-
         except EOFError:
             right.close()
             break
@@ -161,19 +177,37 @@ class NeighborFinder:
         self.L_neighbors = torch.from_numpy(np.zeros((self.n, self.W))).long().to(device)
         self.L_eidx = torch.from_numpy(np.zeros((self.n, self.W))).long().to(device)
         self.L_ts = torch.from_numpy(np.zeros((self.n, self.W))).float().to(device)
-        self.head = torch.from_numpy(np.zeros((self.n, self.W))).long().to(device)
+        self.head = torch.from_numpy(np.zeros((self.n, ))).long().to(device)
         self.eidx = 0
 
         self.pipe = None
         self.event = None
 
+        self.total_consumed = torch.zeros(self.n, dtype=torch.long, device=device)
+
     def update_async(self, cur_ts):
-        self.pipe.send(('update', (self.L_neighbors, self.L_eidx, self.L_ts), cur_ts))
+        """
+        A updated strategy: instead of updating whenever there are pending neighbors,
+        we now batch and only submit a full-row update when a node accumulates W updates,
+        enabling more efficient GPU processing.
+        """
+        enough_mask = self.total_consumed >= self.W
+        nodes_to_update = enough_mask.nonzero(as_tuple=False).squeeze(-1)
+        if nodes_to_update.numel() == 0:
+            return 
+
+        update_counts = torch.full_like(nodes_to_update, self.W)
+        update_list = list(zip(nodes_to_update.tolist(), update_counts.tolist()))
+
+        self.pipe.send(('update', (self.L_neighbors, self.L_eidx, self.L_ts), update_list, self.head.cpu().numpy(), cur_ts))
         self.event.clear()
+
+        self.total_consumed[nodes_to_update] = 0
 
     def gather_l_hop_walks(self, L, src_nodes, cur_time, n_walk=100, e_idx=None):
         '''
-        gather L_hop walks based on sampled neighbor pool to form a subgraph.
+        Gather L-hop walks based on the sampled neighbor pool to form a subgraph.
+        Update: uses torch.unique_consecutive for efficient local index calculation.
         '''
         Q = len(src_nodes)
         if Q == 0:
@@ -191,13 +225,27 @@ class NeighborFinder:
             e_idx_batch.append(e_idx)
 
         for _ in range(L):
-            idx_pos = torch.randint(0, self.W, (T, )).long().to(device)
-            cur_ts = self.L_ts[cur_nodes, idx_pos]
-            cur_eidx = self.L_eidx[cur_nodes, idx_pos]
-            cur_nodes = self.L_neighbors[cur_nodes, idx_pos]
-            n_idx_batch.append(cur_nodes)
+            # Efficient per-group range calculation (O(N)), assumes cur_nodes is grouped
+            unique_nodes, counts = torch.unique_consecutive(cur_nodes, return_counts=True)
+            group_starts = torch.cat([torch.tensor([0], device=device), torch.cumsum(counts, 0)[:-1]])
+            total = counts.sum().item()
+            pos_in_total = torch.arange(total, device=device)
+            local_index = pos_in_total - torch.repeat_interleave(group_starts, counts)
+
+            pool_index = (self.head[cur_nodes] + local_index) % self.W
+
+            cur_ts   = self.L_ts[cur_nodes, pool_index]
+            cur_eidx = self.L_eidx[cur_nodes, pool_index]
+            next_nodes = self.L_neighbors[cur_nodes, pool_index]
+
+            n_idx_batch.append(next_nodes)
             e_idx_batch.append(cur_eidx)
             ts_batch.append(cur_ts)
+
+            self.total_consumed.scatter_add_(0, unique_nodes, counts)
+            self.head[unique_nodes] = (self.head[unique_nodes] + counts) % self.W
+
+            cur_nodes = next_nodes
 
         L += 1
         n_idx_batch = torch.stack(n_idx_batch, dim=-1).reshape(Q, n_walk, L)

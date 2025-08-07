@@ -41,7 +41,7 @@ def train_val(train_val_data, model, mode, bs, epochs, criterion, optimizer, ear
     for epoch in range(epochs):
         acc, ap, f1, auc, m_loss = [], [], [], [], []
         logger.info('start {} epoch'.format(epoch))
-        left.send(('reset', None, None))
+        left.send(('reset', None, None, None, None))
         for k in tqdm(range(num_batch)):
             # generate training mini-batch
             s_idx = k * bs
@@ -131,7 +131,7 @@ def train_val_node_cls(train_val_data, model, mode, bs, epochs, criterion, optim
     for epoch in range(epochs):
         acc, ap, f1, auc, m_loss = [], [], [], [], []
         logger.info('start {} epoch'.format(epoch))
-        left.send(('reset', None, None))
+        left.send(('reset', None, None, None, None))
         for k in tqdm(range(num_batch)):
             # generate training mini-batch
             s_idx = k * bs
